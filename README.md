@@ -1,140 +1,91 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
    
-### Simulator.
-You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
+### Simulator and Project Informatin
+See Udacity git of this project [here](https://github.com/udacity/CarND-Path-Planning-Project)
 
-### Goals
-In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 10 m/s^3.
+--
+## [Rubric](https://review.udacity.com/#!/rubrics/1020/view)
 
-#### The map of the highway is in data/highway_map.txt
-Each waypoint in the list contains  [x,y,s,dx,dy] values. x and y are the waypoint's map coordinate position, the s value is the distance along the road to get to that waypoint in meters, the dx and dy values define the unit normal vector pointing outward of the highway loop.
+1. The car is able to drive at least 4.32 miles without incident.
+> Please build the code and run with simulator
 
-The highway's waypoints loop around so the frenet s value, distance along the road, goes from 0 to 6945.554.
+2. The car drives according to the speed limit.
+> I set a speed limit of 47.5 mph, which is declared as `SPEEDLIMIT` in codes. Speed up is conditioned on not exceeding the speed limit.
 
-## Basic Build Instructions
+3. Max Acceleration and Jerk are not Exceeded.
+> I used a spline curve to get a smooth trajectory. Also, velocity is add/sub at most 0.2 in a 0.02 second period, which means velocity has change rate (0.2/2.24)/0.02 = 4.46 meter/s^2.
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./path_planning`.
+4. Car does not have collisions.
+> I detected the collisions between ego car's trajectory and other car's predicted trajectories. In addition, a cost function, `how_close_cost`, penalizes the trajectories that are too close to each other. Note that, when doing lane changing, I speed up ego-car if, at target lane, no car in front of us or the car in front of us is just far away. This makes a smooth lane changing.
 
-Here is the data provided from the Simulator to the C++ Program
+5. The car stays in its lane, except for the time between changing lanes.
+> There is a lane changing cost `change_lane_cost = 0.1`. So, lane-changing costs more than keep-lane state in same conditions.
 
-#### Main car's localization Data (No Noise)
+6. The car is able to change lanes
+> I used a `speed_efficiency_cost` to help selecting which path is more efficient. Ego-car changes lane if lane-changing produces a more efficient path than keep-lane (of course, no collision happens).
 
-["x"] The car's x position in map coordinates
+--
+## More Details
 
-["y"] The car's y position in map coordinates
+As shown in the following figure, firstly, at most three possible trajectories are generated, then we select the one with smallest cost.
 
-["s"] The car's s position in frenet coordinates
+<img src="pic/top_view_algo.png" alt="top_view_algo" height="50%" width="50%">
 
-["d"] The car's d position in frenet coordinates
+### Finite States
 
-["yaw"] The car's yaw angle in the map
+I use three states, "KL", "LCL", and "LCR". At each time stamp, three trajectories are produced according to these three states. Note that, if ego-car is at left most lane, then no path for "LCL" is produced. Similarly, path for "LCR" is not produced when car is at right most lane.
 
-["speed"] The car's speed in MPH
+### Smooth Trajectory
 
-#### Previous path data given to the Planner
+A [cubic spline](http://kluge.in-chemnitz.de/opensource/spline/) is used for producing a smooth trajectory. Basically, I followed the codes that are showed in "Project Walkthrough and Q&A" with some modifications. To generate a new trajectory, a smaller number of previous points are reused (`num_reuse_prev_traj_pts`) than it is showed in Lecture. Smaller number of reusing points makes more new points to generate in order to quickly reflect the new environment. However, a non-smooth trajectory may be produced when it becomes to small. I found that `num_reuse_prev_traj_pts` set to 30 works well in my case.
 
-//Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
+Moreover, I produced 75 points for each trajectory (50 in Lecture) which represents 1.5 seconds for a path. A moderate long trajectory is helpful when using cost functions to compute trajectories for safety.
 
-["previous_path_x"] The previous list of x points previously given to the simulator
+### Cost Functions
 
-["previous_path_y"] The previous list of y points previously given to the simulator
+1. speed_efficiency_cost
 
-#### Previous path's end s and d values 
+<img src="pic/speed_efficiency_cost.png" alt="speed_efficiency_cost" height="50%" width="50%">
 
-["end_path_s"] The previous list's last point's frenet s value
+2. how_close_cost
 
-["end_path_d"] The previous list's last point's frenet d value
+<img src="pic/how_close_cost.png" alt="how_close_cost" height="50%" width="50%">
 
-#### Sensor Fusion Data, a list of all other car's attributes on the same side of the road. (No Noise)
+3. distance_factor
 
-["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
+<img src="pic/distance_factor.png" alt="distance_factor" height="50%" width="50%">
 
-## Details
+* Cost in "KL"
+```c++
+// Calculate the cost
+double speed_cost = speed_efficiency_cost(check_car_speed);
+if (!isNear(aheadCarTrajectory_x, aheadCarTrajectory_y, rtn_next_x_vals, rtn_next_y_vals))
+ speed_cost = 0;
+double change_lane_cost = 0;
+rtnCost = change_lane_cost + speed_cost;
+return rtnCost;
+```
 
-1. The car uses a perfect controller and will visit every (x,y) point it recieves in the list every .02 seconds. The units for the (x,y) points are in meters and the spacing of the points determines the speed of the car. The vector going from a point to the next point in the list dictates the angle of the car. Acceleration both in the tangential and normal directions is measured along with the jerk, the rate of change of total Acceleration. The (x,y) point paths that the planner recieves should not have a total acceleration that goes over 10 m/s^2, also the jerk should not go over 50 m/s^3. (NOTE: As this is BETA, these requirements might change. Also currently jerk is over a .02 second interval, it would probably be better to average total acceleration over 1 second and measure jerk from that.
+* Cost in "LCL/LCR"
+```c++
+double speed_cost = speed_efficiency_cost(ahead_car_speed);
+double dist_factor = 1.0;
+if (carIdxAhead!=-1)  // far away from ahead car at intended lane, so we can descrease the speed_efficiency_cost by a factor
+{
+ double dist = EucledianDistBetweenTrajectories(aheadCarTrajectory_x, aheadCarTrajectory_y, rtn_next_x_vals, rtn_next_y_vals);
+ dist_factor = 1.0 - 1.0/(1.0+exp((60.0-dist)*1.0));
+}
+speed_cost *= dist_factor;
 
-2. There will be some latency between the simulator running and the path planner returning a path, with optimized code usually its not very long maybe just 1-3 time steps. During this delay the simulator will continue using points that it was last given, because of this its a good idea to store the last points you have used so you can have a smooth transition. previous_path_x, and previous_path_y can be helpful for this transition since they show the last points given to the simulator controller with the processed points already removed. You would either return a path that extends this previous path or make sure to create a new path that has a smooth transition with this last path.
-
-## Tips
-
-A really helpful resource for doing this project and creating smooth trajectories was using http://kluge.in-chemnitz.de/opensource/spline/, the spline function is in a single hearder file is really easy to use.
-
----
-
-## Dependencies
-
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets 
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
+double change_lane_cost = 0.10;  // a cost for changing lane, where KL costs 0
+double how_close_behind_car_cost = 0.0;
+if (behindCarTrajectory_x.size()!=0)  // having a behind car at intended lane
+ how_close_behind_car_cost = how_close_cost(behindCarTrajectory_x,behindCarTrajectory_y,rtn_next_x_vals,rtn_next_y_vals);
+double how_close_ahead_car_cost = 0.0;
+if (aheadCarTrajectory_x.size()!=0)  // having a ahead car at intended lane
+ how_close_ahead_car_cost = how_close_cost(aheadCarTrajectory_x,aheadCarTrajectory_y,rtn_next_x_vals,rtn_next_y_vals);
+rtnCost = change_lane_cost + speed_cost;
+rtnCost += (how_close_behind_car_cost<how_close_ahead_car_cost)?how_close_ahead_car_cost:how_close_behind_car_cost;  // chose max to add up
+return rtnCost;
+```
