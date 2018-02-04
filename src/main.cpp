@@ -171,6 +171,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 */
 const double LARGEDOUBLE = 99999.0;
 const double SPEEDLIMIT = 47.5;
+// Input d, return which lane index, 0, 1, 2
 int getLaneIdx(const double d)
 {
   int laneIdx = int(d/4.0);
@@ -178,12 +179,12 @@ int getLaneIdx(const double d)
     laneIdx = -1;
   return laneIdx;
 }
-
+// As name refers
 double EucledianDist(const double x1, const double y1, const double x2, const double y2)
 {
   return sqrt(pow(fabs(x1-x2),2) + pow(fabs(y1-y2),2));
 }
-
+// Calculate the smallest distance between two trajectories
 double EucledianDistBetweenTrajectories(const vector<double> &x1, const vector<double> &y1, const vector<double> &x2, const vector<double> &y2)
 {
   double min_dist = LARGEDOUBLE;
@@ -195,9 +196,7 @@ double EucledianDistBetweenTrajectories(const vector<double> &x1, const vector<d
   }
   return min_dist;
 }
-
 // Check collision for tow trajectories
-// Assume all these vectors are in same size
 bool isCollision(const vector<double> &x1, const vector<double> &y1, const vector<double> &x2, const vector<double> &y2)
 {
   const double car_radius = 2.0;
@@ -210,7 +209,7 @@ bool isCollision(const vector<double> &x1, const vector<double> &y1, const vecto
   }
   return false;
 }
-
+// Return true if two trajectories has intersections within radius buffer_radius
 bool isNear(const vector<double> &x1, const vector<double> &y1, const vector<double> &x2, const vector<double> &y2)
 {
   const double buffer_radius = 30.0;
@@ -222,7 +221,10 @@ bool isNear(const vector<double> &x1, const vector<double> &y1, const vector<dou
   }
   return false;
 }
-
+// Return the car index that is closest (ahead/behind) of ego car at check_lane
+// E.g.: Assume ego car is at lane 1, and we are going to LCR, then check_lane=2.
+//       position='ahead' will give us the closest car index that is ahead of ego car at lane 2.
+//       If no ahead car at lane 2, then it'll return -1
 int getClosestCarIdx(const std::vector<double> &car_data, const std::vector<vector<double>> &sensor_fusion, const int check_lane, const string position)
 {
   int rtnIdx = -1;
@@ -255,7 +257,7 @@ int getClosestCarIdx(const std::vector<double> &car_data, const std::vector<vect
   }
   return rtnIdx;
 }
-
+// Input the lane index of ego car, then return the possible actions
 vector<string> successor_states_IMPL(const int ego_lane)
 {
   // Provides the possible next states given the current state for the FSM
@@ -268,13 +270,13 @@ vector<string> successor_states_IMPL(const int ego_lane)
     states.push_back("LCR");
   return states;
 }
-
+// Cost functions of speed efficiency. A larger speed produces a smaller cost.
 double speed_efficiency_cost(const double v)
 {
   // Simply a linear cost from 1 to 0, where speed is from 0 to SPEEDLIMIT
   return 1.0-v/SPEEDLIMIT;
 }
-
+// Penalize close distance of two trajectories (for safety issue)
 double how_close_cost(const vector<double> &x1, const vector<double> &y1, const vector<double> &x2, const vector<double> &y2)
 {
   double rtnCost;
@@ -294,7 +296,7 @@ double how_close_cost(const vector<double> &x1, const vector<double> &y1, const 
     rtnCost = pow((4.0/min_dist),2);
   return rtnCost;
 }
-
+// Predict a car's trajectory with assuming constant velocity
 void simplePrediction(const std::vector<vector<double>> &sensor_fusion, const int idx, const int num_of_pred,
   vector<double> &rtn_next_x_vals, vector<double> &rtn_next_y_vals)
 {
@@ -328,6 +330,7 @@ void genTrajectory(const vector<double> &map_waypoints_x, const vector<double> &
   const int num_reuse_prev_traj_pts = 30; // number of points that we are going to use in previous trajectory
   vector<double> previous_path_x;
   vector<double> previous_path_y;
+  // Preserve num_reuse_prev_traj_pts points of previous trajectories
   int original_prev_size = in_previous_path_x.size();
   int prev_size = original_prev_size;
   if (original_prev_size > num_reuse_prev_traj_pts)
@@ -355,12 +358,9 @@ void genTrajectory(const vector<double> &map_waypoints_x, const vector<double> &
   // if previous size is almost empty, use the car as starting reference
   if (prev_size < 2)
   {
-    cout << "***** prev_size < 2\n";
     // Use two points that make the path tangent to the car
     double prev_car_x = car_x - cos(ref_yaw);
     double prev_car_y = car_y - sin(ref_yaw);
-    // double prev_car_x = car_x - cos(car_yaw);
-    // double prev_car_y = car_y - sin(car_yaw);
 
     ptsx.push_back(prev_car_x);
     ptsx.push_back(car_x);
@@ -462,13 +462,14 @@ double keep_lane_trajectory(const vector<double> &map_waypoints_x, const vector<
   double car_speed = car_data[5];
   double end_path_s = car_data[6];
   double end_path_d = car_data[7];
-  // ===== stay away from the car in front of us
+  
   int prev_size = previous_path_x.size();
   bool too_close = false;
   int ego_lane = getLaneIdx(car_d);
 
   double check_car_speed = SPEEDLIMIT;
   double nearest_s_ahead = LARGEDOUBLE;
+  // ===== stay away from the car in front of us
   for (int i=0; i<sensor_fusion.size(); i++)
   {
     // car is in my lane
@@ -507,7 +508,7 @@ double keep_lane_trajectory(const vector<double> &map_waypoints_x, const vector<
   {
     *ref_vel_ptr += .2;  // .224
   }
-  // Generate sd_points for keep lane
+  // Generate sd_points for KL trajectory
   std::vector<vector<double>> sd_points;
   for (int i=1;i<=3;i++)
   {
@@ -519,7 +520,7 @@ double keep_lane_trajectory(const vector<double> &map_waypoints_x, const vector<
   genTrajectory(map_waypoints_x, map_waypoints_y, map_waypoints_s, previous_path_x, previous_path_y,
               car_data, sd_points, *ref_vel_ptr, rtn_next_x_vals, rtn_next_y_vals);
 
-  // Predict the trajectories of the cars ahead on the ego lane
+  // Predict the trajectories of the car in front of the ego lane
   int carIdxAhead = getClosestCarIdx(car_data, sensor_fusion, ego_lane, "ahead");
   std::vector<double> aheadCarTrajectory_x;
   std::vector<double> aheadCarTrajectory_y;
@@ -565,7 +566,7 @@ double lane_change_trajectory(const vector<double> &map_waypoints_x, const vecto
   int prev_size = previous_path_x.size();
   bool too_close = false;
 
-  double ego_lane_ahead_car_speed = SPEEDLIMIT;
+  double ego_lane_ahead_car_speed = SPEEDLIMIT;  // this is the speed of car which is in front of ego car at ego lane
   double nearest_s_ahead = LARGEDOUBLE;
   for (int i=0; i<sensor_fusion.size(); i++)
   {
@@ -619,12 +620,12 @@ double lane_change_trajectory(const vector<double> &map_waypoints_x, const vecto
     ahead_car_speed  = sqrt(ahead_car_vx*ahead_car_vx+ahead_car_vy*ahead_car_vy);
   }
   // Change velocity to fit the intended lane, using ego_lane_ahead_car_speed, ahead_car_speed
-  // If ahead car at intended lane is far away, then we can speed up to change lane
+  // If ahead_car at intended lane is far away, then we can speed up to change lane
   if (carIdxAhead!=-1 || !isNear(aheadCarTrajectory_x, aheadCarTrajectory_y, rtn_next_x_vals, rtn_next_y_vals))
   {
     if (*ref_vel_ptr < SPEEDLIMIT)
     {
-      if (too_close)
+      if (too_close)  // we have a close car in font of us at our lane, so not speed up too much
         *ref_vel_ptr += .1;
       else
         *ref_vel_ptr += .2;  // .224
@@ -650,9 +651,9 @@ double lane_change_trajectory(const vector<double> &map_waypoints_x, const vecto
   {
     if (isCollision(behindCarTrajectory_x, behindCarTrajectory_y, rtn_next_x_vals, rtn_next_y_vals))
     {
-      cout << "\n*****\t Predicting Collision with BEHIND car at intended lane\n";
-      rtn_next_x_vals.clear();
-      rtn_next_y_vals.clear();
+      cout << "***** Predicting Collision with BEHIND car at " << (((ego_lane-intend_lane)<0)?"Right":"Left") << " lane\n";
+      rtn_next_x_vals.clear();  // having collision, then return empty trajectory
+      rtn_next_y_vals.clear();  // having collision, then return empty trajectory
     }
   }
 
@@ -664,23 +665,23 @@ double lane_change_trajectory(const vector<double> &map_waypoints_x, const vecto
     // Check collision of this trajectory
     if (isCollision(aheadCarTrajectory_x, aheadCarTrajectory_y, rtn_next_x_vals, rtn_next_y_vals))
     {
-      cout << "\n*****\t Predicting Collision with AHEAD car at intended lane\n";
-      rtn_next_x_vals.clear();
-      rtn_next_y_vals.clear();
+      cout << "***** Predicting Collision with AHEAD car at " << (((ego_lane-intend_lane)<0)?"Right":"Left") << " lane\n";
+      rtn_next_x_vals.clear();  // having collision, then return empty trajectory
+      rtn_next_y_vals.clear();  // having collision, then return empty trajectory
     }
   }
 
   // Calculate the cost
   double speed_cost = speed_efficiency_cost(ahead_car_speed);
   double dist_factor = 1.0;
-  if (carIdxAhead!=-1)  // far away from ahead car at intended lane, so we can descrease the speed efficiency cost by a factor
+  if (carIdxAhead!=-1)  // Descrease the speed_cost by a factor if having ahead car at intended lane
   {
     double dist = EucledianDistBetweenTrajectories(aheadCarTrajectory_x, aheadCarTrajectory_y, rtn_next_x_vals, rtn_next_y_vals);
     dist_factor = 1.0 - 1.0/(1.0+exp((60.0-dist)*1.0));
   }
-  cout << "speed_cost=" << speed_cost;
-  speed_cost *= dist_factor;
-  cout << "; dist_factor=" << dist_factor << "; after speed_cost=" << speed_cost << endl;
+  // cout << "speed_cost=" << speed_cost;
+  // speed_cost *= dist_factor;
+  // cout << "; dist_factor=" << dist_factor << "; speed_cost*facotr=" << speed_cost << endl;
   
   // if (!ahead_car_close)
   //   speed_cost = 0;
@@ -698,7 +699,7 @@ double lane_change_trajectory(const vector<double> &map_waypoints_x, const vecto
 }
 
 // Generate State Trajectory
-// Given a possible next state, generate the appropriate trajectory to realize the next state.
+// Given a possible state, GST will generate the appropriate trajectory to realize that state action.
 double GST_IMPL(const vector<double> &map_waypoints_x, const vector<double> &map_waypoints_y,const vector<double> &map_waypoints_s,
   const std::vector<double> &in_previous_path_x, const std::vector<double> &in_previous_path_y,
   const string state, const std::vector<double> &car_data, const std::vector<vector<double>> &sensor_fusion,
@@ -762,8 +763,6 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  // start in lane 1
-  int intend_lane = 0;
   // Have a reference velocity to target
   double ref_vel = 0;  // mph
   // double ref_vel = 49.5;  // mph
@@ -779,7 +778,7 @@ int main() {
   vector<string> (*successor_states)(const int lane_idx);
   successor_states = successor_states_IMPL;
 
-  h.onMessage([&prev_state, &successor_states, &GST, &ref_vel, &intend_lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&prev_state, &successor_states, &GST, &ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // cout << pfun(1.5,2.5) << endl;
     // "42" at the start of the message means there's a websocket message event.
@@ -836,10 +835,11 @@ int main() {
               vector<double> trajectory_x;
               vector<double> trajectory_y;
               double state_ref_vel = ref_vel;
+              // Generate State Trajectory (GST)
               double cost = GST(map_waypoints_x, map_waypoints_y, map_waypoints_s, previous_path_x, previous_path_y,
                 possible_states[i], car_data, sensor_fusion,
                 &state_ref_vel, trajectory_x, trajectory_y);
-              if (trajectory_x.size()!=0)  // In GST, if predict collisions, then trajectory_x/y will be empty
+              if (trajectory_x.size()!=0)  // In GST, if collisions predicted, then trajectory_x/y will be empty
               {
                 trajectories_x.push_back(trajectory_x);
                 trajectories_y.push_back(trajectory_y);
@@ -849,7 +849,7 @@ int main() {
                 double state_transition_cost = 0.0;
                 if (prev_state.compare(possible_states[i])!=0)
                 {
-                  state_transition_cost = 0.75;
+                  state_transition_cost = 0.05;
                   if ( (prev_state.compare("LCL")==0) && (possible_states[i].compare("LCR")==0) )
                     state_transition_cost = 0.2;
                   if ( (prev_state.compare("LCR")==0) && (possible_states[i].compare("LCL")==0) )
@@ -857,8 +857,13 @@ int main() {
                 }
                 cost += state_transition_cost;
                 costs.push_back(cost);
-                cout << possible_states[i] << "=" << cost << "; ";
               }
+            }
+
+            // Debug messages
+            for (int i=0;i<costs.size();i++)
+            {
+              cout << possible_states[i] << "=" << costs[i] << "; ";
             }
             cout << endl;
 
