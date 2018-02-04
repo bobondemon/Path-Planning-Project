@@ -46,13 +46,28 @@ Moreover, I produced 75 points for each trajectory (50 in Lecture) which represe
 
 1. speed_efficiency_cost
 
+Penalize slow speed for efficiency.
+
 <img src="pic/speed_efficiency_cost.png" alt="speed_efficiency_cost" height="50%" width="50%">
 
 2. how_close_cost
 
+Penalize close distance of two trajectories (for safety issue)
+
+```c++
+if (dist<=4.0)
+ rtnCost = 1.0;
+else
+ rtnCost = pow((4.0/dist),2);
+```
+
 <img src="pic/how_close_cost.png" alt="how_close_cost" height="50%" width="50%">
 
 3. distance_factor
+
+This factor is used together with `speed_cost` when calculating lane changing cost. The `speed_cost` represents the cost for "the car ahead of us" at **intended lane**, we call it "target car" for now.
+
+`speed_cost *= dist_factor;` means if the target car is near to us, which means `factor` is near 1, then we keep the `speed_cost` value. On the other hand, if target car is far from us, then it is safe to change lane. Lower cost is calculated by multiplying a factor near 0.
 
 <img src="pic/distance_factor.png" alt="distance_factor" height="50%" width="50%">
 
